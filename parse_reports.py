@@ -1,10 +1,11 @@
+import re
 import sqlparse
 import argparse
 
 class Parser():
     def __init__(self, path: str) -> None:
         self.tables = []
-        self.fields = []
+        self.fields = set()
         self.state = "IDLE"
         self.query = self.read_file(path)
         
@@ -13,6 +14,12 @@ class Parser():
             print("got", len(self.tokens), "queries")
         self.tokens = self.tokens[0]
 
+        self.syntax_words = ['select', 'from', 'case', 'trunc', 'as', 'like', \
+                             'trunc', 'max', 'min', 'nvl', 'upper', 'avg',    \
+                             'sum', 'when', 'else', 'then', 'end', 'and',     \
+                             '*', 'is', 'null',  '', 'not', 'nvl2', ',', \
+                             '=', '+', '-', '>', '<', '>=', '<=', '!=', "/"]
+
     def read_file(self, path: str) -> str:
         # TODO: error handle here
         with open(path, "r", encoding="Windows-1251") as f:
@@ -20,36 +27,49 @@ class Parser():
 
     def add_token(self, token):
         if self.state == "SELECT":
-            self.fields.append(token.value)
+            # self.fields.append(token.value)
+            self.handle_field(token)
         elif self.state == "FROM":
-            self.tables.append(token.value.split()[0])
+            self.tables.append(token.value.split()[0].lower())
         elif self.state == "APPEND":
-            table_name = (self.tables[-1] + "$" + token.value).split()[0]
+            table_name = (self.tables[-1] + "$" + token.value).split()[0].lower()
             self.tables[-1] = table_name
             self.state = "FROM"
 
+    def handle_field(self, token):
+        arr = token.value.lower().split()
+        arr = [w for t in arr for w in re.split('\(|\)', t)]
+        arr = [w for w in arr if not w in self.syntax_words]
+        arr = [w for w in arr if not re.match("[0-9]|'\d{2}\.\d{2}\.\d{4}'|'.*'", w)]
+        arr = [w for w in arr if not re.match('".*"|\'.*\'', w)]
+        arr = [re.sub('-|.*\.|,', '', w) for w in arr]
+        for w in set(arr):
+            self.fields.add(w)
 
     def parse(self, tokens = None):
         if not tokens:
             tokens = self.tokens
 
-        for i, token in enumerate(tokens):
+        for token in tokens:
+            if token.value.upper() == "DELETE":
+                print("YOU SHALL NOT PASS")
+                return
+
             # print(token.value)
-            if isinstance( token, sqlparse.sql.Token):
-                if token.value.upper() in ["SELECT", "FROM", "GROUP BY"]:
-                    self.state = token.value.upper()
-                    # print(self.state)
+            if token.value.upper() in ["SELECT", "FROM", "GROUP BY"]:
+                self.state = token.value.upper()
+                # print(self.state)
 
-                elif token.value == "$":
-                    self.state = "APPEND"
+            elif token.value == "$":
+                self.state = "APPEND"
 
-                elif isinstance(token, sqlparse.sql.IdentifierList) or \
-                     isinstance(token, sqlparse.sql.Parenthesis):
-                    self.parse(tokens = token)
+            elif isinstance(token, sqlparse.sql.IdentifierList) or \
+                 isinstance(token, sqlparse.sql.Parenthesis):
+                self.parse(tokens = token)
 
-                elif isinstance(token, sqlparse.sql.Identifier):
-                    # print(i, token.value)
-                    self.add_token(token)
+            elif isinstance(token, sqlparse.sql.Identifier):
+                # print(i, token.value)
+                self.add_token(token)
 
     def print_output(self):
         print(self.tables)
