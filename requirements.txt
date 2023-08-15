@@ -1,1 +1,4 @@
 sqlparse==0.4.4
+sqlalchemy==1.4
+pandas==2.0
+tomli==2.0
